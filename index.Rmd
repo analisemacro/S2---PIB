@@ -1,0 +1,505 @@
+---
+title: "Contas Nacionais Trimestrais"
+subtitle: "Macroeconomia para Investimentos"
+author: 'Vítor Wilher<br><span style = "font-size: 70%;">Cientista-Chefe da Análise Macro<br>'
+#date: "<span style = 'font-size: 70%;'>`r format(Sys.Date(), '%d de %B de %Y')`</span>"
+output:
+  xaringan::moon_reader:
+    css: xaringan-themer.css
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: "16:9"
+      navigation: 
+        scroll: false
+params:
+  logo_slides: "https://analisemacro.com.br/wp-content/uploads/dlm_uploads/2021/10/logo_am.png"
+---
+
+```{r, file = "./rmd/setup.R", include=FALSE}
+```
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+options(htmltools.preserve.raw = FALSE)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning   = FALSE,  # exibir avisos do console?
+  message   = FALSE,  # exibir mensagens do console?
+  dpi       = 300,    # resolução
+  fig.align = "center"# alinhamento de imagens
+  )
+```
+
+```{css, echo=FALSE}
+pre {
+  white-space: pre-wrap;
+  overflow-y: scroll !important;
+  max-height: 45vh !important;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.tiny55 .remark-code {
+  font-size: 55%; !important;
+}
+```
+
+
+
+### Tema de hoje
+
+- Sistema de Contas Nacionais<br><br>
+- Produto Interno Bruto (PIB)<br><br>
+  - O que é o PIB?<br><br>
+  - Óticas do PIB<br><br>
+  - PIB nominal vs. real<br><br>
+  - Deflator do PIB
+
+
+---
+class: middle, center, inverse
+# Sistema de Contas Nacionais
+
+
+---
+### O que é o Sistema de Contas Nacionais?
+
+O **Sistema de Contas Nacionais (SCN)** é o conjunto padronizado de recomendações internacionalmente acordadas sobre como compilar as medidas de atividade econômica, de acordo com rígidas convenções contábeis baseadas em princípios econômicos. Saiba mais em: [https://unstats.un.org/unsd/nationalaccount/sna.asp](https://unstats.un.org/unsd/nationalaccount/sna.asp)
+
+No Brasil o responsável por compilar e divulgar essas estatísticas é o **IBGE** através do [**Sistema de Contas Nacionais Trimestrais (SCNT)**](https://www.ibge.gov.br/estatisticas/economicas/industria/9300-contas-nacionais-trimestrais.html?=&t=resultados). Nesse sistema são disponibilizados os valores correntes e índice de volume (1995=100) para:
+
+- Produto Interno Bruto (PIB) a preços de mercado;
+- Impostos sobre produtos;
+- Valor adicionado a preços básicos;
+- Consumo pessoal;
+- Consumo do governo;
+- Formação bruta de capital fixo (FBCF);
+- Variação de estoques
+- Exportações e importações de bens e serviços.
+
+Saiba mais em: [https://www.ibge.gov.br/estatisticas/economicas/industria/9300-contas-nacionais-trimestrais.html?=&t=o-que-e](https://www.ibge.gov.br/estatisticas/economicas/industria/9300-contas-nacionais-trimestrais.html?=&t=o-que-e)
+
+
+---
+class: middle, center, inverse
+# Produto Interno Bruto (PIB)
+
+
+---
+### Entendendo o PIB
+
+.pull-left[
+
+- **O que é o PIB?**
+
+O PIB é a soma de todos os bens e serviços **finais** produzidos por um país, estado ou cidade, geralmente em um ano. Todos os países calculam o seu PIB nas suas respectivas moedas.
+
+- **Por que bens e serviços finais?**
+
+O PIB mede apenas os bens e serviços finais para evitar **dupla contagem**. Por exemplo, se um país produz R&dollar; 100 de trigo, R&dollar; 200 de farinha de trigo e R&dollar; 300 de pão, seu PIB será de R&dollar; 300, pois os valores da farinha e do trigo já estão embutidos no valor do pão.
+
+]
+
+.pull-right[
+
+```{r, echo=FALSE, fig.height=4.5}
+# Pacotes
+library(magrittr)
+
+# Tabela 1846 - Valores a preços correntes (Milhões de Reais)
+tbl_precos_correntes <- paste0(
+  "/t/1846/n1/all/v/all/p/all/c11255/90687,90691,90696,", 
+  "90707,93404,93405,93406,93407,93408/d/v585%200"
+  )
+
+# Tabela 1620 - Série encadeada do índice de volume trimestral (Base: média 1995 = 100)
+tbl_num_indice <- paste0(
+  "/t/1620/n1/all/v/all/p/all/c11255/90687,90691,90696,90707,",
+  "93404,93405,93406,93407,93408/d/v583%202"
+  )
+
+# Coleta dados
+raw_precos_correntes <- sidrar::get_sidra(api = tbl_precos_correntes)
+raw_encadeado <- sidrar::get_sidra(api = tbl_num_indice)
+
+# Função para operações móveis
+rolling <- function(column, fun = sum, period = 4, align = "right", ...) {
+  
+  timetk::slidify_vec(
+    .x      = column,
+    .f      = fun,
+    .period = period,
+    .align  = align,
+    ...
+    )
+  
+}
+
+# Tratamento de dados
+
+# PIB (e componentes) a preços correntes acumulados em 4 períodos
+pib_precos_correntes <- raw_precos_correntes %>%
+  dplyr::select(
+    "date"     = "Trimestre (Código)",
+    "variable" = "Setores e subsetores",
+    "value_pc" = "Valor"
+    ) %>% 
+  dplyr::group_by(variable) %>% 
+  dplyr::mutate(
+    date = lubridate::yq(date) %>% tsibble::yearquarter(),
+    variable = stringr::str_remove_all(
+      string  = variable, 
+      pattern = " - total| a preços de mercado| \\(-\\)| de bens e serviços"
+      ) %>% 
+      dplyr::recode(
+        "Despesa de consumo das famílias" = "Cons. das famílias",
+        "Despesa de consumo da administração pública" = "Desp. do governo",
+        "Formação bruta de capital fixo" = "FBCF"
+        ),
+    value_acum = rolling(column = value_pc / 1e6, na.rm = TRUE)
+    ) %>% 
+  dplyr::ungroup()
+
+# PIB (e componentes) em taxa de variação acumulada em 4 períodos
+pib_encadeado <- raw_encadeado %>%
+  dplyr::select(
+    "date"      = "Trimestre (Código)",
+    "variable"  = "Setores e subsetores",
+    "value_idx" = "Valor"
+    ) %>% 
+  dplyr::group_by(variable) %>% 
+  dplyr::mutate(
+    date = lubridate::yq(date) %>% tsibble::yearquarter(),
+    variable = stringr::str_remove_all(
+      string  = variable, 
+      pattern = " - total| a preços de mercado| \\(-\\)| de bens e serviços"
+      ) %>% 
+      dplyr::recode(
+        "Despesa de consumo das famílias"             = "Cons. das famílias",
+        "Despesa de consumo da administração pública" = "Desp. do governo",
+        "Formação bruta de capital fixo"              = "FBCF"
+        ),
+    value_yoy = (rolling(column = value_idx, na.rm = TRUE) / 
+      rolling(column = dplyr::lag(value_idx, 4), na.rm = TRUE) - 1) * 100 
+    ) %>% 
+  dplyr::ungroup()
+
+# Cores
+colors <- c(
+  blue  = "#282f6b",
+  red   = "#b22200",
+  green = "#224f20"
+  )
+
+# Gráfico
+pib_encadeado %>% 
+  dplyr::filter(variable == "PIB" & date >= tsibble::yearquarter("2000 Q1")) %>% 
+  ggplot2::ggplot() +
+  ggplot2::aes(x = lubridate::as_date(date), y = value_yoy) +
+  ggplot2::geom_hline(yintercept = 0, linetype = "dashed") +
+  ggplot2::geom_line(size = 2, color = colors[1]) +
+  ggplot2::scale_y_continuous(
+    labels = scales::number_format(big.mark = ".", decimal.mark = ",", suffix = "%")
+    ) +
+  ggplot2::labs(
+    title    = "Crescimento do PIB",
+    subtitle = "Taxa acumulada em 4 trimestres",
+    x        = NULL, 
+    y        = NULL,
+    caption  = "**Dados**: IBGE | **Elaboração**: analisemacro.com.br"
+    ) +
+  ggplot2::theme_light() +
+  ggplot2::theme(
+    plot.title    = ggplot2::element_text(size = 20, face = "bold"),
+    plot.subtitle = ggplot2::element_text(size = 13),
+    plot.caption  = ggtext::element_markdown(size = 12),
+    axis.text     = ggplot2::element_text(size = 12)
+  )
+```
+
+]
+
+Em resumo, o PIB é um indicador que ajuda a compreender a economia como um todo, mas não expressa importantes fatores, como distribuição de renda, qualidade de vida, educação e saúde.
+
+
+---
+### Óticas do PIB
+
+.pull-left[
+
+O PIB pode ser expresso por **três óticas**: 
+
+- **Oferta** (produto): PIB é igual ao valor bruto da produção, a preços básicos, menos o consumo intermediário, a preços de consumidor, mais os impostos, líquidos de subsídios, sobre produtos;
+- **Demanda** (despesa): PIB é igual a despesa de consumo das famílias, mais o consumo do governo, mais o consumo das instituições sem fins de lucro a serviço das famílias (consumo final), mais a formação bruta de capital fixo, mais a variação de estoques, mais as exportações de bens e serviços, menos as importações de bens e serviços;
+- **Renda**: PIB é igual à remuneração dos empregados, mais o total dos impostos, líquidos de subsídios, sobre a produção e a importação, mais o rendimento misto bruto, mais o excedente operacional bruto.
+
+]
+
+.pull-right[
+
+**Síntese do PIB e seus componentes** (4º trim. 2021):
+
+```{r, echo=FALSE, fig.cap="Dados: IBGE | Elaboração: analisemacro.com.br"}
+# Juntar dados
+pib <- dplyr::left_join(
+  x = pib_precos_correntes, 
+  y = pib_encadeado,
+  by = c("date", "variable")
+  )
+
+# Renderizar tabela datatable
+pib_dt <- pib %>%  
+  dplyr::filter(date == tsibble::yearquarter(lubridate::ymd("2021-12-01"))) %>% 
+  dplyr::select(-c("date", "value_pc", "value_idx")) %>% 
+  dplyr::mutate(
+    value_yoy = format(value_yoy, digits = 2, nsmall = 2, big.mark = ".", decimal.mark = ",")
+    ) %>% 
+  dplyr::rename_with(~c("Conta", "R$ Tri. acum. em 4 trim.", "Tx. acum. em 4 trim."))
+
+pib_dt %>% 
+  DT::datatable(
+    options = list(
+      dom        = "t",
+      autoWidth  = FALSE,
+      columnDefs = list(list(width = "160px", targets = 0))
+      ),
+    rownames = FALSE
+    ) %>% 
+  DT::formatCurrency(columns = 2, currency = "R$ ", mark = ".", dec.mark = ",", digits = 2) %>% 
+  DT::formatString(columns = 3, suffix = "%") %>% 
+  DT::formatStyle(columns = 3, textAlign = "right") %>% 
+  DT::formatStyle(columns = 1, textAlign = "left") %>% 
+  DT::formatStyle( 
+    columns = 1,
+    target  = "row",
+    fontWeight = DT::styleEqual(
+      levels = unique(pib_dt$Conta),
+      values = ifelse(unique(pib_dt$Conta) == "PIB", "bold", "weight")
+      ),
+    backgroundColor = DT::styleEqual(
+      levels = unique(pib_dt$Conta),
+      values = ifelse(unique(pib_dt$Conta) == "PIB", "#dbdce3", "white")
+      )
+    ) %>% 
+  DT::formatStyle(columns = 1:4, target = "row", lineHeight = "70%")
+```
+
+]
+
+
+---
+### PIB nominal vs. PIB real
+
+Dada a mensuração do PIB exposta, cria-se a necessidade de analisar o cresimento da economia com o cuidado de diferenciar se:
+
+- A economia está produzindo uma quantidade maior de bens e serviços ou;
+- Os bens e serviços estão sendo vendidos a preços mais elevados.
+
+Essa distinção é retratada pelos conceitos de PIB nominal e real.
+
+---
+### PIB nominal vs. PIB real
+
+Diferença
+
+.pull-left[
+
+.center[**PIB nominal**:]
+
+- É o valor da produção de bens e serviços corrente aos preços correntes;
+- É calculado utilizando preços de mercado (preços correntes);
+- Reflete as mudanças de quantidades e preços na economia.
+
+]
+
+.pull-right[
+
+.center[**PIB real**:]
+
+- É o valor da produção de bens e serviços corrente aos preços passados;
+- É calculado sem a influência da variação de preços (preços constantes);
+- Fixa-se um ano-base para comparação;
+- Reflete as mudanças nas quantidades produzidas na economia.
+
+]
+
+
+---
+### PIB nominal vs. PIB real
+
+Exemplo
+
+```{r, echo=FALSE}
+pib_dados <- tibble::tribble(
+  ~"Ano", ~"Preço Açaí", ~"Qtd. Açaí", ~"Preço Banana", ~"Qtd. Banana",
+  2019, 1, 100, 2, 50,
+  2020, 2, 150, 3, 100,
+  2021, 3, 200, 4, 150
+  )
+
+pib_dados %>%
+  dplyr::mutate(
+    "PIB nominal" = paste0(
+      "(<b>R$ ", `Preço Açaí`, "</b> x ", `Qtd. Açaí`,
+      ") + (<b>R$ ", `Preço Banana`, "</b> x ", `Qtd. Banana`, ") = R$ ",
+      (`Preço Açaí` * `Qtd. Açaí`) + (`Preço Banana` * `Qtd. Banana`)
+      ),
+    "PIB real (ano-base = 2019)" = paste0(
+      "(<b>R$ ", `Preço Açaí`[Ano == 2019], "</b> x ", `Qtd. Açaí`,
+      ") + (<b>R$ ", `Preço Banana`[Ano == 2019], "</b> x ", `Qtd. Banana`, ") = R$ ",
+      (`Preço Açaí`[Ano == 2019] * `Qtd. Açaí`) + (`Preço Banana`[Ano == 2019] * `Qtd. Banana`)
+    )
+  ) %>%
+  DT::datatable(
+    options = list(
+      dom        = "t",
+      columnDefs = list(list(targets = (5), width = "30%"), list(targets = (6), width = "30%")),
+      initComplete = DT::JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'font-size': '80%'});",
+    "}")
+      ),
+    rownames = FALSE,
+    escape   = FALSE
+    ) %>%
+  DT::formatCurrency(
+    columns  = c(2, 4),
+    currency = "R$ ",
+    mark     = ".",
+    dec.mark = ",",
+    digits   = 0
+    ) %>%
+  DT::formatStyle(columns = 0, target = "row", lineHeight = "70%", fontSize = "80%") %>%
+  DT::formatStyle(columns = colnames(.), `font-size` = "80%")
+```
+
+
+---
+### PIB nominal vs. PIB real
+
+Dados
+
+```{r, echo=FALSE, fig.height=2.8, fig.width=12}
+pib_precos_encadeados <- sidrar::get_sidra(
+  api = "/t/6612/n1/all/v/all/p/all/c11255/90707/d/v9318%202"
+  ) %>%
+  dplyr::select(
+    "date"     = "Trimestre (Código)",
+    "value_pe" = "Valor"
+    ) %>% 
+  dplyr::mutate(date = lubridate::yq(date) %>% tsibble::yearquarter())
+
+# Gráfico
+pib %>% 
+  dplyr::filter(variable == "PIB" & date >= tsibble::yearquarter("2000 Q1")) %>% 
+  dplyr::left_join(y = pib_precos_encadeados, by = "date") %>% 
+  dplyr::select(
+    "date",
+    "Valores a preços correntes (R$ Milhões)" = "value_pc",
+    "Valores encadeados a preços de 1995 (R$ Milhões)" = "value_pe"
+    ) %>% 
+  tidyr::pivot_longer(cols = -"date", names_to = "variable", values_to = "value") %>% 
+  ggplot2::ggplot() +
+  ggplot2::aes(x = lubridate::as_date(date), y = value, color = variable) +
+  ggplot2::geom_line(size = 2) +
+  ggplot2::scale_y_continuous(labels = scales::label_number()) +
+  ggplot2::scale_color_manual(values =  unname(colors)) +
+  ggplot2::facet_wrap(facets = ~variable, scales = "free") +
+  ggplot2::labs(
+    title    = "PIB Nominal vs. Real",
+    subtitle = "Tabelas 1846 (Valores a preços correntes) e 6612 (Valores encadeados) do Sidra",
+    x        = NULL, 
+    y        = NULL,
+    caption  = "**Dados**: IBGE | **Elaboração**: analisemacro.com.br"
+    ) +
+  ggplot2::theme_light() +
+  ggplot2::theme(
+    plot.title       = ggplot2::element_text(size = 20, face = "bold"),
+    plot.subtitle    = ggplot2::element_text(size = 13),
+    plot.caption     = ggtext::element_markdown(size = 12),
+    axis.text        = ggplot2::element_text(size = 12),
+    strip.background = ggplot2::element_blank(),
+    strip.text       = ggplot2::element_text(size = 12, face = "bold", color = "black"),
+    legend.position  = "none"
+  )
+```
+
+
+---
+### Deflator do PIB
+
+- O deflator do PIB mede o nível atual de preços relativo ao nível de preços do ano-base;
+- É um índice de preços com todos os bens e serviços produzidos na economia;
+- Serve para obter a parte do aumento do PIB nominal atribuída a um aumento de preços e não por uma aumento nas quantidades produzidas;
+- Reflete apenas os preços dos bens e serviços.
+
+Seu cálculo é bastante simples: &nbsp;&nbsp;&nbsp;&nbsp; $\textbf{Deflator do PIB} = \frac{\textbf{PIB Nominal}}{\textbf{PIB Real}} \times 100$
+
+Com o exemplo didático anterior:
+
+```{r, echo=FALSE}
+pib_dados %>%
+  dplyr::mutate(
+    "PIB nominal" = paste0(
+      "R$ ",
+      (`Preço Açaí` * `Qtd. Açaí`) + (`Preço Banana` * `Qtd. Banana`)
+      ),
+    "PIB real<br>(ano-base = 2019)" = paste0(
+      "R$ ",
+      (`Preço Açaí`[Ano == 2019] * `Qtd. Açaí`) + (`Preço Banana`[Ano == 2019] * `Qtd. Banana`)
+      ),
+    "Deflator do PIB<br>(ano-base = 2019)" = paste0(
+      "R$ ",(`Preço Açaí` * `Qtd. Açaí`) + (`Preço Banana` * `Qtd. Banana`),
+      " / R$ ",
+      (`Preço Açaí`[Ano == 2019] * `Qtd. Açaí`) +
+        (`Preço Banana`[Ano == 2019] * `Qtd. Banana`),
+      " x 100 = ",
+      format(
+        x = ((`Preço Açaí` * `Qtd. Açaí`) + (`Preço Banana` * `Qtd. Banana`)) /
+          ((`Preço Açaí`[Ano == 2019] * `Qtd. Açaí`) + 
+             (`Preço Banana`[Ano == 2019] * `Qtd. Banana`)) * 100,
+        digits = 2,
+        nsmall = 2,
+        big.mark = ".",
+        decimal.mark = ","
+        )
+      )
+    ) %>%
+  DT::datatable(
+    options = list(
+      dom        = "t",
+      columnDefs = list(
+        list(targets = (5), width = "15%"),
+        list(targets = (6), width = "20%"),
+        list(targets = (7), width = "30%")
+        ),
+      initComplete = DT::JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'font-size': '80%'});",
+    "}")
+      ),
+    rownames = FALSE,
+    escape   = FALSE
+    ) %>%
+  DT::formatCurrency(
+    columns  = c(2, 4),
+    currency = "R$ ",
+    mark     = ".",
+    dec.mark = ",",
+    digits   = 0
+    ) %>%
+  DT::formatStyle(columns = 0, target = "row", lineHeight = "70%", fontSize = "80%") %>%
+  DT::formatStyle(columns = colnames(.), `font-size` = "80%") %>% 
+  DT::formatStyle(columns = 4:5, textAlign = "right")
+```
+
+**Interpretação**: 71,43% é o deflator do PIB de 2019 para 2020, ou seja, o nível de preços aumentou 71,43% de 2019 para 2020.
+
+
+---
+### Referências
+
+IBGE - Instituto Brasileiro de Geografia e Estatística. *Contas nacionais trimestrais*: ano de referência 2010. Rio de Janeiro: IBGE, 2016. Disponível em: https://biblioteca.ibge.gov.br/visualizacao/livros/liv96834.pdf. Acesso em: 07 jun. 2021.
+
